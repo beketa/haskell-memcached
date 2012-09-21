@@ -17,6 +17,7 @@ import Network.Memcache.Serializable
 import System.IO
 import qualified Data.ByteString as B
 import Data.ByteString (ByteString)
+import Data.Int
 
 -- | Gather results from action until condition is true.
 ioUntil :: (a -> Bool) -> IO a -> IO [a]
@@ -87,6 +88,16 @@ getOneValue handle = do
       return $ Just val
     _ -> return Nothing
 
+getOneValueWithId :: Handle -> IO (Maybe (Int64, ByteString))
+getOneValueWithId handle = do
+  s <- hGetNetLn handle
+  case words s of
+    ["VALUE", _, _, sbytes, casId] -> do
+      let count = read sbytes
+      val <- B.hGet handle count
+      return $ Just (read casId, val)
+    _ -> return Nothing
+
 incDec :: (Key k) => String -> Server -> k -> Int -> IO (Maybe Int)
 incDec cmd (Server handle) key delta = do
   hPutCommand handle [cmd, toKey key, show delta]
@@ -110,6 +121,29 @@ instance Memcache Server where
         hGetNetLn handle
         hGetNetLn handle
         return $ deserialize val
+
+  gets (Server handle) key = do
+    hPutCommand handle ["gets", toKey key]
+    val <- getOneValueWithId handle
+    case val of
+      Nothing -> return Nothing
+      Just (casId, val) -> do
+        hGetNetLn handle
+        hGetNetLn handle
+        return $ fmap (\v -> (casId, v)) $ deserialize val
+
+  cas (Server handle) key casId val = do
+    let flags = (0::Int)
+    let exptime = (0::Int)
+    let valstr = serialize val
+    let bytes = B.length valstr
+    let cmd = unwords ["cas", toKey key, show flags, show exptime, show bytes, 
+                       show casId]
+    hPutNetLn handle cmd
+    hBSPutNetLn handle valstr
+    hFlush handle
+    response <- hGetNetLn handle
+    return (response == "STORED")
 
   delete (Server handle) key = do
     hPutCommand handle ["delete", toKey key]

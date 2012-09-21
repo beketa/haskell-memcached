@@ -6,10 +6,15 @@ module Network.Memcache where
 import Network.Memcache.Serializable
 import Network.Memcache.Key
 
+import Data.Int
+
 class Memcache a where
   set, add, replace :: (Key k, Serializable s) => a -> k -> s -> IO Bool
   get               :: (Key k, Serializable s) => a -> k -> IO (Maybe s)
   delete            :: (Key k) => a -> k -> IO Bool
   incr, decr        :: (Key k) => a -> k -> Int -> IO (Maybe Int)
+
+  gets              :: (Key k, Serializable s) => a -> k -> IO (Maybe (Int64, s))
+  cas               :: (Key k, Serializable s) => a -> k -> Int64 -> s -> IO Bool
 
 -- vim: set ts=2 sw=2 et :
