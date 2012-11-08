@@ -49,6 +49,7 @@ newtype Server = Server { sHandle :: Handle }
 connect :: Network.HostName -> Network.PortNumber -> IO Server
 connect host port = do
   handle <- Network.connectTo host (Network.PortNumber port)
+  hSetBuffering handle LineBuffering
   return (Server handle)
 
 disconnect :: Server -> IO ()
