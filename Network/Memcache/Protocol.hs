@@ -1,6 +1,8 @@
 -- Memcached interface.
 -- Copyright (C) 2005 Evan Martin <martine@danga.com>
 
+{-# LANGUAGE OverloadedStrings, ForeignFunctionInterface #-}
+
 module Network.Memcache.Protocol (
   Server,
   connect,disconnect,stats   -- server-specific commands
@@ -15,9 +17,22 @@ import qualified Network
 import Network.Memcache.Key
 import Network.Memcache.Serializable
 import System.IO
-import qualified Data.ByteString as B
+import qualified Data.ByteString.Char8 as B
 import Data.ByteString (ByteString)
 import Data.Int
+
+import Foreign.C.Types
+import Foreign.C.String
+import System.IO.Unsafe
+
+foreign import ccall unsafe "stdlib.h atol" c_atol :: CString -> IO CLong
+foreign import ccall unsafe "stdlib.h atoll" c_atoll :: CString -> IO CLLong
+
+readInt :: B.ByteString -> Int
+readInt = fromEnum . unsafePerformIO . flip B.useAsCString c_atol
+
+readInt64 :: B.ByteString -> Int64
+readInt64 = fromInteger . toInteger . unsafePerformIO . flip B.useAsCString c_atoll
 
 -- | Gather results from action until condition is true.
 ioUntil :: (a -> Bool) -> IO a -> IO [a]
@@ -38,6 +53,10 @@ hBSPutNetLn h str = B.hPutStr h str >> hPutStr h "\r\n"
 -- | Get a line, stripping \r\n terminator.
 hGetNetLn :: Handle -> IO [Char]
 hGetNetLn h = fmap init (hGetLine h) -- init gets rid of \r
+
+-- | Get a line, stripping \r\n terminator.
+hBSGetNetLn :: Handle -> IO ByteString
+hBSGetNetLn h = fmap B.init (B.hGetLine h) -- init gets rid of \r
 
 -- | Put out a command (words with terminator) and flush.
 hPutCommand :: Handle -> [String] -> IO ()
@@ -81,22 +100,22 @@ store action (Server handle) key val = do
 
 getOneValue :: Handle -> IO (Maybe ByteString)
 getOneValue handle = do
-  s <- hGetNetLn handle
-  case words s of
+  s <- hBSGetNetLn handle
+  case filter (/= " ") $ B.split ' ' s of
     ["VALUE", _, _, sbytes] -> do
-      let count = read sbytes
+      let count = readInt sbytes
       val <- B.hGet handle count
       return $ Just val
     _ -> return Nothing
 
 getOneValueWithId :: Handle -> IO (Maybe (Int64, ByteString))
 getOneValueWithId handle = do
-  s <- hGetNetLn handle
-  case words s of
+  s <- hBSGetNetLn handle
+  case filter (/= " ") $ B.split ' ' s of
     ["VALUE", _, _, sbytes, casId] -> do
-      let count = read sbytes
+      let count = readInt sbytes
       val <- B.hGet handle count
-      return $ Just (read casId, val)
+      return $ Just (readInt64 casId, val)
     _ -> return Nothing
 
 incDec :: (Key k) => String -> Server -> k -> Int -> IO (Maybe Int)
@@ -119,8 +138,8 @@ instance Memcache Server where
     case val of
       Nothing -> return Nothing
       Just val -> do
-        hGetNetLn handle
-        hGetNetLn handle
+        B.hGetLine handle
+        B.hGetLine handle
         return $ deserialize val
 
   gets (Server handle) key = do
@@ -129,8 +148,8 @@ instance Memcache Server where
     case val of
       Nothing -> return Nothing
       Just (casId, val) -> do
-        hGetNetLn handle
-        hGetNetLn handle
+        B.hGetLine handle
+        B.hGetLine handle
         return $ fmap (\v -> (casId, v)) $ deserialize val
 
   cas (Server handle) key casId val = do
