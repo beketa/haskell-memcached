@@ -25,6 +25,10 @@ import Foreign.C.Types
 import Foreign.C.String
 import System.IO.Unsafe
 
+import qualified Network.Socket as S
+import Network.BSD
+import qualified Control.Exception as E
+
 foreign import ccall unsafe "stdlib.h atol" c_atol :: CString -> IO CLong
 foreign import ccall unsafe "stdlib.h atoll" c_atoll :: CString -> IO CLLong
 
@@ -64,10 +68,24 @@ hPutCommand h strs = hPutNetLn h (unwords strs) >> hFlush h
 
 newtype Server = Server { sHandle :: Handle }
 
+connectTo' :: HostName -> PortNumber -> IO Handle
+connectTo' hostname port = do
+  proto <- getProtocolNumber "tcp"
+  E.bracketOnError
+    (S.socket S.AF_INET S.Stream proto)
+    (S.sClose)  -- only done if there's an error
+    (\sock -> do
+        he <- getHostByName hostname
+        S.connect sock (S.SockAddrInet port (hostAddress he))
+        S.setSocketOption sock S.NoDelay 1
+        S.socketToHandle sock ReadWriteMode
+    )
+
 -- connect :: String -> Network.Socket.PortNumber -> IO Server
 connect :: Network.HostName -> Network.PortNumber -> IO Server
 connect host port = do
-  handle <- Network.connectTo host (Network.PortNumber port)
+  --handle <- Network.connectTo host (Network.PortNumber port)
+  handle <- connectTo' host port
   hSetBuffering handle LineBuffering
   return (Server handle)
 
