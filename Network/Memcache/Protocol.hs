@@ -52,7 +52,7 @@ hPutNetLn h str = hPutStr h (str ++ "\r\n")
 
 -- | Put out a line with \r\n terminator.
 hBSPutNetLn :: Handle -> ByteString -> IO ()
-hBSPutNetLn h str = B.hPutStr h str >> hPutStr h "\r\n"
+hBSPutNetLn h str = B.hPutStr h (str `B.append` "\r\n")
 
 -- | Get a line, stripping \r\n terminator.
 hGetNetLn :: Handle -> IO [Char]
@@ -63,8 +63,8 @@ hBSGetNetLn :: Handle -> IO ByteString
 hBSGetNetLn h = fmap B.init (B.hGetLine h) -- init gets rid of \r
 
 -- | Put out a command (words with terminator) and flush.
-hPutCommand :: Handle -> [String] -> IO ()
-hPutCommand h strs = hPutNetLn h (unwords strs) >> hFlush h
+hPutCommand :: Handle -> [B.ByteString] -> IO ()
+hPutCommand h strs = hBSPutNetLn h (B.intercalate " " strs) >> hFlush h
 
 newtype Server = Server { sHandle :: Handle }
 
@@ -103,14 +103,14 @@ stats (Server handle) = do
                       (key:rest) -> (key, unwords rest)
                       []         -> (line, "")
 
-store :: (Key k, Serializable s) => String -> Server -> k -> s -> IO Bool
+store :: (Key k, Serializable s) => B.ByteString -> Server -> k -> s -> IO Bool
 store action (Server handle) key val = do
-  let flags = (0::Int)
-  let exptime = (0::Int)
+  --let flags = (0::Int)
+  --let exptime = (0::Int)
   let valstr = serialize val
   let bytes = B.length valstr
-  let cmd = unwords [action, toKey key, show flags, show exptime, show bytes]
-  hPutNetLn handle cmd
+  let cmd = B.intercalate " " [action, toKey key, "0", "0", B.pack (show bytes)]
+  hBSPutNetLn handle cmd
   hBSPutNetLn handle valstr
   hFlush handle
   response <- hGetNetLn handle
@@ -118,8 +118,9 @@ store action (Server handle) key val = do
 
 getOneValue :: Handle -> IO (Maybe ByteString)
 getOneValue handle = do
-  s <- hBSGetNetLn handle
-  case filter (/= " ") $ B.split ' ' s of
+  --s <- hBSGetNetLn handle
+  s <- B.hGetLine handle
+  case filter (/= "") $ B.split ' ' s of
     ["VALUE", _, _, sbytes] -> do
       let count = readInt sbytes
       val <- B.hGet handle count
@@ -128,17 +129,18 @@ getOneValue handle = do
 
 getOneValueWithId :: Handle -> IO (Maybe (Int64, ByteString))
 getOneValueWithId handle = do
-  s <- hBSGetNetLn handle
-  case filter (/= " ") $ B.split ' ' s of
+  --s <- hBSGetNetLn handle
+  s <- B.hGetLine handle
+  case filter (/= "") $ B.split ' ' s of
     ["VALUE", _, _, sbytes, casId] -> do
       let count = readInt sbytes
       val <- B.hGet handle count
       return $ Just (readInt64 casId, val)
     _ -> return Nothing
 
-incDec :: (Key k) => String -> Server -> k -> Int -> IO (Maybe Int)
+incDec :: (Key k) => B.ByteString -> Server -> k -> Int -> IO (Maybe Int)
 incDec cmd (Server handle) key delta = do
-  hPutCommand handle [cmd, toKey key, show delta]
+  hPutCommand handle [cmd, toKey key, B.pack (show delta)]
   response <- hGetNetLn handle
   case response of
     "NOT_FOUND" -> return Nothing
@@ -156,8 +158,9 @@ instance Memcache Server where
     case val of
       Nothing -> return Nothing
       Just val -> do
-        B.hGetLine handle
-        B.hGetLine handle
+        B.hGet handle 7  -- skip "\r\nEND\r\n"
+        --B.hGetLine handle
+        --B.hGetLine handle
         return $ deserialize val
 
   gets (Server handle) key = do
@@ -166,18 +169,19 @@ instance Memcache Server where
     case val of
       Nothing -> return Nothing
       Just (casId, val) -> do
-        B.hGetLine handle
-        B.hGetLine handle
+        B.hGet handle 7  -- skip "\r\nEND\r\n"
+        --B.hGetLine handle
+        --B.hGetLine handle
         return $ fmap (\v -> (casId, v)) $ deserialize val
 
   cas (Server handle) key casId val = do
-    let flags = (0::Int)
-    let exptime = (0::Int)
+    --let flags = (0::Int)
+    --let exptime = (0::Int)
     let valstr = serialize val
     let bytes = B.length valstr
-    let cmd = unwords ["cas", toKey key, show flags, show exptime, show bytes, 
-                       show casId]
-    hPutNetLn handle cmd
+    let cmd = B.intercalate " " ["cas", toKey key, "0", "0", B.pack (show bytes), 
+                       B.pack (show casId)]
+    hBSPutNetLn handle cmd
     hBSPutNetLn handle valstr
     hFlush handle
     response <- hGetNetLn handle
