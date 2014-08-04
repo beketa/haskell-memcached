@@ -2,6 +2,7 @@
 -- Copyright (C) 2005 Evan Martin <martine@danga.com>
 
 {-# LANGUAGE OverloadedStrings, ForeignFunctionInterface #-}
+{-# OPTIONS_GHC -fno-warn-unused-binds -fno-warn-unused-matches #-}
 
 module Network.Memcache.Protocol (
   Server,
@@ -157,22 +158,22 @@ instance Memcache Server where
     val <- getOneValue handle
     case val of
       Nothing -> return Nothing
-      Just val -> do
-        B.hGet handle 7  -- skip "\r\nEND\r\n"
+      Just val' -> do
+        _ <- B.hGet handle 7  -- skip "\r\nEND\r\n"
         --B.hGetLine handle
         --B.hGetLine handle
-        return $ deserialize val
+        return $ deserialize val'
 
   gets (Server handle) key = do
     hPutCommand handle ["gets", toKey key]
     val <- getOneValueWithId handle
     case val of
       Nothing -> return Nothing
-      Just (casId, val) -> do
-        B.hGet handle 7  -- skip "\r\nEND\r\n"
+      Just (casId, val') -> do
+        _ <- B.hGet handle 7  -- skip "\r\nEND\r\n"
         --B.hGetLine handle
         --B.hGetLine handle
-        return $ fmap (\v -> (casId, v)) $ deserialize val
+        return $ fmap (\v -> (casId, v)) $ deserialize val'
 
   cas (Server handle) key casId val = do
     --let flags = (0::Int)

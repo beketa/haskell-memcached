@@ -33,4 +33,5 @@ exposed-modules:
   Network.Memcache.ServerPool,
   Network.Memcache.Key
 
+ghc-options:         -Wall
 ghc-prof-options:    -prof -auto-all
