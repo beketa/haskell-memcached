@@ -16,5 +16,6 @@ class Memcache a where
 
   gets              :: (Key k, Serializable s) => a -> k -> IO (Maybe (Int64, s))
   cas               :: (Key k, Serializable s) => a -> k -> Int64 -> s -> IO Bool
+  setEx, addEx, replaceEx :: (Key k, Serializable s) => a -> k -> s -> Integer -> IO Bool
 
 -- vim: set ts=2 sw=2 et :

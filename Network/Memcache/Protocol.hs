@@ -104,13 +104,13 @@ stats (Server handle) = do
                       (key:rest) -> (key, unwords rest)
                       []         -> (line, "")
 
-store :: (Key k, Serializable s) => B.ByteString -> Server -> k -> s -> IO Bool
-store action (Server handle) key val = do
+store :: (Key k, Serializable s) => B.ByteString -> Server -> k -> s -> Integer -> IO Bool
+store action (Server handle) key val exptime = do
   --let flags = (0::Int)
   --let exptime = (0::Int)
   let valstr = serialize val
   let bytes = B.length valstr
-  let cmd = B.intercalate " " [action, toKey key, "0", "0", B.pack (show bytes)]
+  let cmd = B.intercalate " " [action, toKey key, "0", B.pack (show exptime), B.pack (show bytes)]
   hBSPutNetLn handle cmd
   hBSPutNetLn handle valstr
   hFlush handle
@@ -149,9 +149,13 @@ incDec cmd (Server handle) key delta = do
 
 
 instance Memcache Server where
-  set     = store "set"
-  add     = store "add"
-  replace = store "replace"
+  set     server key value = setEx server key value 0
+  add     server key value = addEx server key value 0
+  replace server key value = replaceEx server key value 0
+
+  setEx     = store "set"
+  addEx     = store "add"
+  replaceEx = store "replace"
 
   get (Server handle) key = do
     hPutCommand handle ["get", toKey key]
